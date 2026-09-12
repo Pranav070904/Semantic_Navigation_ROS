@@ -27,7 +27,7 @@ colcon build
 source install/setup.bash
 
 ## 6. Launch
-ros2 launch nav_robot perception.launch.py
-ros2 launch nav_robot brain.launch.py
-ros2 launch nav_robot robot.launch.py
-ros2 run nav_robot nav2_goal_node
+- ros2 launch nav_robot perception.launch.py
+- ros2 launch nav_robot brain.launch.py
+- ros2 launch nav_robot robot.launch.py
+- ros2 run nav_robot nav2_goal_node
