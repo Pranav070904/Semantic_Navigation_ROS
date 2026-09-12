@@ -13,10 +13,11 @@ This creates ~/robot_worlds/worlds/small_house/ — matching the
 original project structure exactly.
 
 ## 3. Add to ~/.bashrc
+```
 export GZ_SIM_RESOURCE_PATH=$GZ_SIM_RESOURCE_PATH:~/robot_worlds/worlds/small_house/models
 export GZ_SIM_RESOURCE_PATH=$GZ_SIM_RESOURCE_PATH:~/robot_worlds/worlds/small_house
 source ~/.bashrc
-
+```
 ## 4. Create your own .env
 Create ~/nav_ws/.env with:
 GEMINI_API_KEY=your_own_key_here
