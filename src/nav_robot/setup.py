@@ -43,6 +43,7 @@ setup(
             'orch_node=nav_robot.orch_node:main',
             'nav2_goal_node= nav_robot.nav2_goal_node:main',
             'local_search_node=nav_robot.local_search_node:main',
+            'frontier_search_node=nav_robot.frontier_search_node:main',
         ],
     },
 )

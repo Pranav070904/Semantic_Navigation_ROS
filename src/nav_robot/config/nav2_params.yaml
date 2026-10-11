@@ -64,7 +64,7 @@ controller_server:
       stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
       xy_goal_tolerance: 0.25
-      yaw_goal_tolerance: 0.25
+      yaw_goal_tolerance: 1.0
 
     FollowPath:
       plugin: "dwb_core::DWBLocalPlanner"
@@ -90,12 +90,12 @@ controller_server:
       linear_granularity: 0.05
       angular_granularity: 0.025
       transform_tolerance: 0.2
-      xy_goal_tolerance: 0.25
+      xy_goal_tolerance: 0.15
       trans_stopped_velocity: 0.25
       short_circuit_trajectory_evaluation: True
       stateful: True
       critics: ["RotateToGoal", "Oscillation", "BaseObstacle", "GoalAlign", "PathAlign", "PathDist", "GoalDist"]
-      BaseObstacle.scale: 0.02
+      BaseObstacle.scale: 0.2
       PathAlign.scale: 32.0
       PathAlign.forward_point_distance: 0.1
       GoalAlign.scale: 24.0
@@ -108,6 +108,7 @@ controller_server:
 local_costmap:
   local_costmap:
     ros__parameters:
+      allow_send_full_costmap: True
       use_sim_time: True
       global_frame: odom
       robot_base_frame: base_link
@@ -138,6 +139,7 @@ local_costmap:
 global_costmap:
   global_costmap:
     ros__parameters:
+      always_send_full_costmap: True
       use_sim_time: True
       global_frame: map
       robot_base_frame: base_link

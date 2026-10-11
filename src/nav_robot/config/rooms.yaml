@@ -4,31 +4,48 @@ rooms:
     y: -1.0457758903503418
     orientation_z: 0.999
     orientation_w: 0.0166
+    min_x: -1.94
+    max_x: 3.86
+    min_y: -4.20
+    max_y: 2.32
+  # kitchen and the old dining_room are one contiguous space (they were only 0.06m
+  # apart), so they are merged into a single searchable region
   kitchen:
-    x: 5.644107818603516
-    y: -3.5796852111816406
+    x: 6.57
+    y: -0.80
     orientation_z: 0.48898159310723366
     orientation_w: 0.8722941026983455
+    min_x: 4.80
+    max_x: 8.34
+    min_y: -4.36
+    max_y: 2.76
   bedroom:
     x: -3.938783645629883
     y: -0.13146278262138367
     orientation_z: 0.940960341950071
     orientation_w: 0.3385168162399105
-  dining_room:
-    x: 6.925544738769531
-    y: -1.1800440549850464
-    orientation_z: 0.7379475931500903
-    orientation_w: 0.6748580219305308
+    min_x: -8.94
+    max_x: -2.98
+    min_y: -1.26
+    max_y: 1.11
   workout_room:
     x: 0.6928400993347168
     y:  2.2654242515563965
     orientation_z: 0.13006675926459269
     orientation_w: 0.9993907655713401
+    min_x: -0.91
+    max_x: 4.43
+    min_y: 1.72
+    max_y: 5.21
   study_room:
     x: -4.610058784484863
     y:  -3.565127372741699
     orientation_z: -0.9915052385814239
     orientation_w: 0.13006675926459269
+    max_x: -3.3343582153320312
+    min_x: -8.541297912597656
+    max_y: -1.5837578773498535
+    min_y: -4.932253360748291
 
 
 

@@ -26,9 +26,11 @@ def generate_launch_description():
         }]
     )
 
-    # Launch Gazebo with world
+    # Launch Gazebo headless (-s, no GUI/3D viewport) - the GUI alone was costing ~1GiB of
+    # VRAM. Sensors (camera, lidar, and the overhead camera added to the world) still render
+    # server-side; view them via RViz instead of Gazebo's own window.
     gazebo = ExecuteProcess(
-        cmd=['gz', 'sim', world_file, '-r'],
+        cmd=['gz', 'sim', world_file, '-r', '-s'],
         output='screen'
     )
 
@@ -87,11 +89,15 @@ def generate_launch_description():
             '/cmd_vel@geometry_msgs/msg/Twist@gz.msgs.Twist',
             '/odom@nav_msgs/msg/Odometry@gz.msgs.Odometry',
             '/camera/image@sensor_msgs/msg/Image@gz.msgs.Image',
-            '/clock@rosgraph_msgs/msg/Clock@gz.msgs.Clock',
+            '/overhead/image@sensor_msgs/msg/Image[gz.msgs.Image',
+            # gz publishes the clock on /world/<world name>/clock, not /clock, so bridging
+            # /clock silently yields a topic with a publisher and no messages - which freezes
+            # every use_sim_time node's timers at t=0. 'default' is the name in the .world file.
+            '/world/default/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock',
             '/scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
             '/tf@tf2_msgs/msg/TFMessage@gz.msgs.Pose_V',
-            '--ros-args',
         ],
+        remappings=[('/world/default/clock', '/clock')],
         parameters=[{'use_sim_time': True}],
         output='screen'
     )

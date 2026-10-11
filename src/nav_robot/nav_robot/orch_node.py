@@ -22,7 +22,16 @@ class OrchestratorNode(Node):
         self.visited_rooms = []
         self.searched_items = []
 
-        self.perception_active = False
+        self.dino_active = False
+        self.search_active = False
+        self.last_alternatives = []
+
+        # primary = the object we were actually sent to find; secondary = a container the
+        # LLM wants opened/checked en route. Reaching a secondary must fall back to the
+        # primary rather than ending the task.
+        self.primary_target = None
+        self.primary_alternatives = []
+        self.secondary_target = None
 
         self.create_subscription(String,'/goal',self.goal_callback,10)
         self.create_subscription(String,'/reasoning_action',self.action_callback,10)
@@ -34,12 +43,13 @@ class OrchestratorNode(Node):
         self.reasoning_feedback_pub = self.create_publisher(String,'/reasoning_feedback',10)
         self.search_target_pub = self.create_publisher(String, '/search_target', 10)
         self.nav_goal_pub = self.create_publisher(String, '/nav_goal', 10)
+        self.similar_objects_pub = self.create_publisher(String, '/similar_objects', 10)
 
         self.dino_change_state = self.create_client(
             ChangeState,'/grounding_dino_node/change_state'
         )
 
-        self.search_change_state = self.create_client(ChangeState,'/local_search_node/change_state')
+        self.search_change_state = self.create_client(ChangeState,'/frontier_search_node/change_state')
 
         self.get_logger().info('Orchestrator ready. Configuring Perception stack')
         self._configure_perception_on_startup()
@@ -58,10 +68,10 @@ class OrchestratorNode(Node):
 
 
         self._wait_for_service(self.dino_change_state,'grounding_dino_node')
-        self._wait_for_service(self.search_change_state,'local_search_node')
+        self._wait_for_service(self.search_change_state,'frontier_search_node')
 
         self._call_transition(self.dino_change_state, Transition.TRANSITION_CONFIGURE,'grounding_dino_node')
-        self._call_transition(self.search_change_state,Transition.TRANSITION_CONFIGURE,'local_search_node')
+        self._call_transition(self.search_change_state,Transition.TRANSITION_CONFIGURE,'frontier_search_node')
 
     def _wait_for_service(self,client,name,timout=15.0):
         if not client.wait_for_service(timeout_sec = timout):
@@ -79,33 +89,62 @@ class OrchestratorNode(Node):
             self.get_logger().error(f'{name}: transition {transition_id} exception: {e}')
 
 
-    def activate_perception(self):
-        if self.perception_active:
+    def activate_dino(self):
+        if self.dino_active:
             return
-        self.get_logger().info("Activating perception stack")
+        self.get_logger().info('Activating grounding_dino')
         self._call_transition(self.dino_change_state,Transition.TRANSITION_ACTIVATE,'grounding_dino_node')
-        self._call_transition(self.search_change_state,Transition.TRANSITION_ACTIVATE,'local_search_node')
-        self.perception_active = True
+        self.dino_active = True
 
-    def deactivate_perception(self):
-        if not self.perception_active:
+    def deactivate_dino(self):
+        if not self.dino_active:
             return
-        self.get_logger().info('Deactivating perception stack')
+        self.get_logger().info('Deactivating grounding_dino')
         self._call_transition(self.dino_change_state,Transition.TRANSITION_DEACTIVATE,'grounding_dino_node')
-        self._call_transition(self.search_change_state,Transition.TRANSITION_DEACTIVATE,'local_search_node')
-        self.perception_active = False
+        self.dino_active = False
+
+    def activate_search(self):
+        if self.search_active:
+            return
+        self.get_logger().info('Activating frontier_search')
+        self._call_transition(self.search_change_state,Transition.TRANSITION_ACTIVATE,'frontier_search_node')
+        self.search_active = True
+
+    def deactivate_search(self):
+        if not self.search_active:
+            return
+        self.get_logger().info('Deactivating frontier_search')
+        self._call_transition(self.search_change_state,Transition.TRANSITION_DEACTIVATE,'frontier_search_node')
+        self.search_active = False
+
+    def teardown_perception(self):
+        self.deactivate_dino()
+        self.deactivate_search()
+
+    def publish_search(self, target, alternatives):
+        """CLIP needs the lineup before the target, or it verifies against a stale list."""
+        similar_msg = String()
+        similar_msg.data = json.dumps(alternatives or [])
+        self.similar_objects_pub.publish(similar_msg)
+
+        search_msg = String()
+        search_msg.data = target
+        self.search_target_pub.publish(search_msg)
 
     def goal_callback(self,msg):
         self.get_logger().info(f'GOAL CALLBACK ENTERED: {msg.data}')  # add this line first
         if self.state != 'IDLE':
             self.get_logger().info('Busy. Ignoring New Goal')
             return
-        #self.deactivate_perception()
 
 
         self.goal = msg.data
         self.visited_rooms = []
         self.searched_items = []
+        self.current_room = None
+        self.primary_target = None
+        self.primary_alternatives = []
+        self.secondary_target = None
         self.state = 'REASONING'
         self.get_logger().info(f'Goal: {self.goal} | State: Reasoning')
         trigger_msg = String()
@@ -119,36 +158,52 @@ class OrchestratorNode(Node):
             action_type = action['action']
             target = action.get('target') or ''
             reasoning = action.get('reasoning','')
+            self.last_alternatives = action.get('alternatives') or []
+
+            # the overall object we were sent to find, as a clean noun. Never overwritten by
+            # the container targets the LLM asks for along the way.
+            goal_object = (action.get('goal_object') or '').strip()
+            if goal_object and self.primary_target is None:
+                self.primary_target = goal_object
+                self.primary_alternatives = list(self.last_alternatives)
+                self.get_logger().info(f'Primary target set to "{self.primary_target}"')
 
             self.get_logger().info(f'{action_type} → {target} | {reasoning}')
 
             if action_type == 'GO_TO_ROOM':
                 self.state = 'NAVIGATING'
                 self.visited_rooms.append(target)
+                
                 nav_msg = String()
                 nav_msg.data = target
                 self.nav_goal_pub.publish(nav_msg)
+                self.activate_search()
 
             elif action_type == 'SEARCH_FOR':
                 self.state = 'SEARCHING'
                 self.last_searched = target
-                
-                if target != self.goal:
+
+                if self.primary_target is None:
+                    self.primary_target = target
+                    self.primary_alternatives = list(self.last_alternatives)
+                    self.secondary_target = None
+                elif target == self.primary_target:
+                    self.secondary_target = None     
+                else:
+                    self.secondary_target = target  
                     self.searched_items.append(target)
 
-                search_msg = String()
-                search_msg.data = target
-                self.search_target_pub.publish(search_msg)
-                self.activate_perception()
+                self.publish_search(target, self.last_alternatives)
+                self.activate_dino()
 
             elif action_type == 'TASK_COMPLETE':
-                self.deactivate_perception()
+                self.teardown_perception()
                 self.state = 'IDLE'
                 self.get_logger().info('TASK COMPLETE')
 
 
             elif action_type == 'TASK_FAILED':
-                self.deactivate_perception()
+                self.teardown_perception()
                 self.state = 'IDLE'
                 self.get_logger().info(f'TASK FAILED: {reasoning}')
 
@@ -166,23 +221,27 @@ class OrchestratorNode(Node):
             self.state = 'IDLE'
             return
 
-        self.current_room = msg.data
+        # only now are we actually in the room - this is the one place current_room is set
+        self.current_room = msg.data or self.current_room
         self.searched_items = []
-        self.last_searched = self.goal
+        self.secondary_target = None
         self.state = 'SEARCHING'
-        self.get_logger().info(f'Arrived at {msg.data} | State: SEARCHING')
+        self.get_logger().info(f'Reached first frontier in {self.current_room} | State: SEARCHING')
 
-        search_msg = String()
-        search_msg.data = self.goal
-        self.search_target_pub.publish(search_msg)
+        
+        target = self.primary_target or self.goal
+        self.last_searched = target
+        self.publish_search(target, self.primary_alternatives or self.last_alternatives)
 
-        self.activate_perception()
+        
+        self.activate_dino()
 
     def scene_callback(self, msg):
         if self.state != 'SEARCHING':
             return
 
-        self.deactivate_perception()
+       
+        self.deactivate_dino()
         self.state = 'REASONING'
 
         feedback = (
@@ -199,7 +258,21 @@ class OrchestratorNode(Node):
         self.reasoning_feedback_pub.publish(feedback_msg)
 
     def found_callback(self, msg):
-        self.deactivate_perception()
+        if self.state != 'SEARCHING':
+            self.get_logger().warn(f'Ignoring /target_found while {self.state}')
+            return
+
+        
+        if self.secondary_target is not None:
+            reached = self.secondary_target
+            self.secondary_target = None
+            self.get_logger().info(
+                f'Reached container "{reached}" - resuming search for '
+                f'"{self.primary_target}"')
+            self.publish_search(self.primary_target, self.primary_alternatives)
+            return
+
+        self.teardown_perception()
         self.state = 'IDLE'
         self.get_logger().info(f'TARGET FOUND: {msg.data}')
 
